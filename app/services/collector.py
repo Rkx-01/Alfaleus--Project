@@ -24,3 +24,23 @@ async def fetch_google_news() -> List[dict]:
         except Exception as e:
             logger.error(f"Error fetching Google News: {e}")
             return []
+
+async def fetch_news_api(api_key: str) -> List[dict]:
+    if not api_key: return []
+    url = f"https://newsapi.org/v2/top-headlines?language=en&apiKey={api_key}"
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(url)
+            data = response.json()
+            articles = []
+            for art in data.get("articles", []):
+                articles.append({
+                    "title": art["title"],
+                    "url": art["url"],
+                    "source": art["source"]["name"],
+                    "published_at": art["publishedAt"]
+                })
+            return articles
+        except Exception as e:
+            logger.error(f"Error fetching NewsAPI: {e}")
+            return []
