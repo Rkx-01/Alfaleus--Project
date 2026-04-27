@@ -17,3 +17,18 @@ async def generate_summary(title: str, content: str) -> str:
     async with httpx.AsyncClient() as client:
         resp = await client.post(url, headers=headers, json=payload)
         return resp.json()["choices"][0]["message"]["content"]
+
+async def analyze_sentiment(text: str) -> str:
+    # Simple rule-based sentiment for now
+    positive_words = ["success", "gain", "growth", "breakthrough", "happy"]
+    negative_words = ["loss", "crisis", "fail", "drop", "warning"]
+    
+    score = 0
+    words = text.lower().split()
+    for w in words:
+        if w in positive_words: score += 1
+        if w in negative_words: score -= 1
+    
+    if score > 0: return "positive"
+    if score < 0: return "negative"
+    return "neutral"
