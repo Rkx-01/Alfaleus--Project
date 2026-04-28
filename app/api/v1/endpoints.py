@@ -1,22 +1,16 @@
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 from app.models.base import get_db
 from app.models import news as models
 
 router = APIRouter()
 
-@router.get("/articles", response_model=List[dict])
-async def get_articles(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(models.Article).limit(20))
-    articles = result.scalars().all()
-    return [{"id": a.id, "title": a.title, "source": a.source} for a in articles]
-
-@router.get("/articles/{article_id}")
-async def get_article(article_id: int, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(models.Article).filter(models.Article.id == article_id))
-    article = result.scalars().first()
-    if not article:
-        raise HTTPException(status_code=404, detail="Article not found")
-    return article
+@router.get("/digest")
+async def get_digest(category: str = "All", db: AsyncSession = Depends(get_db)):
+    stmt = select(models.Cluster).join(models.Cluster.articles)
+    if category != "All":
+        stmt = stmt.filter(models.Article.source == category)
+    result = await db.execute(stmt)
+    return result.scalars().unique().all()
