@@ -27,3 +27,9 @@ class Cluster(Base):
     topic_name = Column(String, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     articles = relationship("Article", secondary=article_cluster_mapping)
+
+class Subscription(Base):
+    __tablename__ = "subscriptions"
+    id = Column(Integer, primary_key=True, index=True)
+    category = Column(String, unique=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
