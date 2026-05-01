@@ -6,23 +6,6 @@ from app.db import db as prisma
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-# --- HARDCODED MOCK DATA ---
-MOCK_CLUSTERS = [
-    {
-        "id": "mock-1", "topicName": "Llama 4 Release Leaks", "category": "Technology", "createdAt": "2026-05-01T12:00:00Z",
-        "articles": [{"title": "Meta internal memos hint at Llama 4 training scale", "source": "TechCrunch", "url": "#1"}]
-    },
-    {
-        "id": "mock-2", "topicName": "Global Green Energy Surge", "category": "Science", "createdAt": "2026-05-01T11:00:00Z",
-        "articles": [{"title": "Solar capacity exceeds coal for first time globally", "source": "BBC News", "url": "#3"}]
-    }
-]
-for i in range(3, 20):
-    MOCK_CLUSTERS.append({
-        "id": f"mock-{i}", "topicName": f"Trending Topic {i}", "category": "Technology" if i % 2 == 0 else "Science",
-        "createdAt": "2026-05-01T09:00:00Z", "articles": [{"title": f"Story {i}", "source": "InsightMatrix", "url": f"#{i}"}]
-    })
-
 async def ensure_db_connected():
     if prisma and not prisma.is_connected():
         try: await prisma.connect()
@@ -33,34 +16,52 @@ async def read_digest(category: str = None, limit: int = 10):
     await ensure_db_connected()
     try:
         where = {}
-        if category and category.lower() != "all": where = {"category": category}
-        clusters = await prisma.cluster.find_many(where=where, take=limit, order={"createdAt": "desc"}, include={"articles": True})
-        if not clusters: return [c for c in MOCK_CLUSTERS if not category or category.lower() == "all" or c["category"] == category][:limit]
+        if category and category.lower() != "all": 
+            where = {"category": category}
+        
+        clusters = await prisma.cluster.find_many(
+            where=where, 
+            take=limit, 
+            order={"createdAt": "desc"}, 
+            include={"articles": True}
+        )
         return clusters
-    except: return MOCK_CLUSTERS[:limit]
+    except Exception as e:
+        logger.error(f"Error fetching digest: {e}")
+        return []
 
 @router.get("/digest/count")
 async def get_digest_count(category: str = None):
     await ensure_db_connected()
     try:
         where = {}
-        if category and category.lower() != "all": where = {"category": category}
-        count = await prisma.cluster.count(where=where)
-        if count == 0: return len([c for c in MOCK_CLUSTERS if not category or category.lower() == "all" or c["category"] == category])
-        return count
-    except: return len(MOCK_CLUSTERS)
+        if category and category.lower() != "all": 
+            where = {"category": category}
+        return await prisma.cluster.count(where=where)
+    except Exception as e:
+        logger.error(f"Error fetching count: {e}")
+        return 0
 
 @router.get("/articles/saved")
-async def get_saved_articles(): return []
+async def get_saved_articles(): 
+    return []
 
 @router.get("/categories")
-async def get_unique_categories(): return ["Technology", "Politics", "Science", "Sports", "World"]
+async def get_unique_categories(): 
+    return ["Technology", "Politics", "Science", "Sports", "World"]
 
 @router.get("/stats")
-async def get_stats(): return {"last_updated": "2026-05-01T15:00:00Z", "sources": 24}
+async def get_stats(): 
+    await ensure_db_connected()
+    try:
+        articles = await prisma.article.count()
+        return {"last_updated": "Just now", "sources": articles}
+    except:
+        return {"last_updated": "Unknown", "sources": 0}
 
 @router.get("/subscriptions")
-async def get_subscriptions(): return []
+async def get_subscriptions(): 
+    return []
 
 @router.get("/test")
 async def test_route():
@@ -75,5 +76,13 @@ async def debug_database():
     try:
         articles = await prisma.article.count()
         clusters = await prisma.cluster.count()
-        return {"articles_in_db": articles, "clusters_in_db": clusters}
-    except Exception as e: return {"error": str(e)}
+        from app.db import check_db_health
+        health, msg = await check_db_health()
+        return {
+            "articles_in_db": articles, 
+            "clusters_in_db": clusters,
+            "db_health": health,
+            "health_msg": msg
+        }
+    except Exception as e: 
+        return {"error": str(e)}
