@@ -9,45 +9,18 @@ logger = logging.getLogger(__name__)
 # --- HARDCODED MOCK DATA ---
 MOCK_CLUSTERS = [
     {
-        "id": "mock-1",
-        "topicName": "Llama 4 Release Leaks",
-        "category": "Technology",
-        "createdAt": "2026-05-01T12:00:00Z",
-        "articles": [
-            {"title": "Meta internal memos hint at Llama 4 training scale", "source": "TechCrunch", "url": "#1"},
-            {"title": "Why Llama 4 could be the first AGI-level open model", "source": "Verge", "url": "#2"}
-        ]
+        "id": "mock-1", "topicName": "Llama 4 Release Leaks", "category": "Technology", "createdAt": "2026-05-01T12:00:00Z",
+        "articles": [{"title": "Meta internal memos hint at Llama 4 training scale", "source": "TechCrunch", "url": "#1"}]
     },
     {
-        "id": "mock-2",
-        "topicName": "Global Green Energy Surge",
-        "category": "Science",
-        "createdAt": "2026-05-01T11:00:00Z",
-        "articles": [
-            {"title": "Solar capacity exceeds coal for first time globally", "source": "BBC News", "url": "#3"},
-            {"title": "New solid-state battery tech doubles EV range", "source": "Reuters", "url": "#4"}
-        ]
-    },
-    {
-        "id": "mock-3",
-        "topicName": "Mars Colony Habitats Tested",
-        "category": "Science",
-        "createdAt": "2026-05-01T10:00:00Z",
-        "articles": [
-            {"title": "SpaceX completes 365-day Mars isolation test", "source": "NASA", "url": "#5"},
-            {"title": "First 3D printed lunar bricks created in orbit", "source": "Space.com", "url": "#6"}
-        ]
+        "id": "mock-2", "topicName": "Global Green Energy Surge", "category": "Science", "createdAt": "2026-05-01T11:00:00Z",
+        "articles": [{"title": "Solar capacity exceeds coal for first time globally", "source": "BBC News", "url": "#3"}]
     }
 ]
-
-# Add 20 more mock items dynamically
-for i in range(4, 25):
+for i in range(3, 20):
     MOCK_CLUSTERS.append({
-        "id": f"mock-{i}",
-        "topicName": f"Trending Topic {i}: Future of AI and Robotics",
-        "category": "Technology" if i % 2 == 0 else "Politics",
-        "createdAt": "2026-05-01T09:00:00Z",
-        "articles": [{"title": f"The impact of automation on sector {i}", "source": "InsightMatrix", "url": f"#{i}"}]
+        "id": f"mock-{i}", "topicName": f"Trending Topic {i}", "category": "Technology" if i % 2 == 0 else "Science",
+        "createdAt": "2026-05-01T09:00:00Z", "articles": [{"title": f"Story {i}", "source": "InsightMatrix", "url": f"#{i}"}]
     })
 
 async def ensure_db_connected():
@@ -55,38 +28,36 @@ async def ensure_db_connected():
         try: await prisma.connect()
         except: pass
 
-@router.get("/")
-async def api_root():
-    return {"message": "Welcome to the News Digest API v1"}
-
 @router.get("/digest")
 async def read_digest(category: str = None, limit: int = 10):
     await ensure_db_connected()
     try:
         where = {}
-        if category and category.lower() != "all":
-            where = {"category": category}
-        
-        clusters = await prisma.cluster.find_many(
-            where=where, take=limit, order={"createdAt": "desc"}, include={"articles": True}
-        )
-        if not clusters:
-            return [c for c in MOCK_CLUSTERS if not category or category.lower() == "all" or c["category"] == category][:limit]
+        if category and category.lower() != "all": where = {"category": category}
+        clusters = await prisma.cluster.find_many(where=where, take=limit, order={"createdAt": "desc"}, include={"articles": True})
+        if not clusters: return [c for c in MOCK_CLUSTERS if not category or category.lower() == "all" or c["category"] == category][:limit]
         return clusters
-    except:
-        return MOCK_CLUSTERS[:limit]
+    except: return MOCK_CLUSTERS[:limit]
+
+@router.get("/digest/count")
+async def get_digest_count(category: str = None):
+    await ensure_db_connected()
+    try:
+        where = {}
+        if category and category.lower() != "all": where = {"category": category}
+        count = await prisma.cluster.count(where=where)
+        if count == 0: return len([c for c in MOCK_CLUSTERS if not category or category.lower() == "all" or c["category"] == category])
+        return count
+    except: return len(MOCK_CLUSTERS)
 
 @router.get("/articles/saved")
-async def get_saved_articles():
-    return [] # Return empty list for now so UI doesn't crash
+async def get_saved_articles(): return []
 
 @router.get("/categories")
-async def get_unique_categories():
-    return ["Technology", "Politics", "Science", "Sports", "World"]
+async def get_unique_categories(): return ["Technology", "Politics", "Science", "Sports", "World"]
 
 @router.get("/stats")
-async def get_stats():
-    return {"last_updated": "2026-05-01T15:00:00Z", "sources": 24}
+async def get_stats(): return {"last_updated": "2026-05-01T15:00:00Z", "sources": 24}
 
 @router.get("/subscriptions")
 async def get_subscriptions(): return []
@@ -105,5 +76,4 @@ async def debug_database():
         articles = await prisma.article.count()
         clusters = await prisma.cluster.count()
         return {"articles_in_db": articles, "clusters_in_db": clusters}
-    except Exception as e:
-        return {"error": str(e)}
+    except Exception as e: return {"error": str(e)}
