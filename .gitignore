@@ -1,10 +1,35 @@
+# Python
 __pycache__/
-*.pyc
-.env
+*.py[cod]
+*$py.class
 venv/
+.venv/
+env/
+.env
+
+# Database & Storage
+*.db
+*.sqlite
+*.sqlite3
+test.db
+app.db
+
+# Prisma
+# Note: DO NOT ignore prisma/schema.prisma
+# We don't need migrations for MongoDB
+prisma/migrations/
+
+# Node/Vite
 node_modules/
 dist/
-*.db
-*.log
+.npm/
+
+# OS/IDEs
 .DS_Store
+.vscode/
+.idea/
+*.log
+
+# Scripts
 rebuild_pro.sh
+render-build.sh.bak

@@ -1,7 +1,5 @@
 fastapi
 uvicorn[standard]
-sqlalchemy
-psycopg2-binary
 pydantic-settings
 httpx
 apscheduler
@@ -10,6 +8,5 @@ scikit-learn
 numpy
 python-dotenv
 tenacity
-asyncpg
 textblob
-aiosqlite
+prisma<7

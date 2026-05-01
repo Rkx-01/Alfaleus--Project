@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
     
     # Database
-    DATABASE_URL: str = "postgresql+asyncpg://user:password@localhost:5432/news_db"
+    DATABASE_URL: str = "mongodb+srv://user:pass@cluster.mongodb.net/news_db"
     
     # AI & Security
     GROQ_API_KEY: Optional[str] = None

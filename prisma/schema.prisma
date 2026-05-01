@@ -1,0 +1,55 @@
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+generator db {
+  provider             = "prisma-client-py"
+  interface            = "asyncio"
+  recursive_type_depth = 5
+}
+
+model Article {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  title        String
+  content      String?
+  summary      String?
+  url          String   @unique
+  source       String
+  category     String?
+  sentiment    String?
+  publishedAt  DateTime @default(now())
+  
+  clusterIds   String[] @db.ObjectId
+  clusters     Cluster[] @relation(fields: [clusterIds], references: [id])
+  
+  savedBy      SavedArticle[]
+}
+
+model Cluster {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  topicName  String
+  category   String
+  createdAt  DateTime @default(now())
+  
+  articleIds String[] @db.ObjectId
+  articles   Article[] @relation(fields: [articleIds], references: [id])
+}
+
+model SavedArticle {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  articleId String   @db.ObjectId
+  article   Article  @relation(fields: [articleId], references: [id])
+  userId    String   @default("default-user")
+  createdAt DateTime @default(now())
+}
+
+model SystemStatus {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  lastRunAt DateTime @default(now())
+}
+
+model Subscription {
+  id       String @id @default(auto()) @map("_id") @db.ObjectId
+  category String @unique
+}

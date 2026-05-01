@@ -7,7 +7,7 @@ from groq import AsyncGroq
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from functools import lru_cache
 from textblob import TextBlob
-from app.models.news import Article
+from prisma.models import Article
 from app.utils.config import settings
 
 logger = logging.getLogger(__name__)

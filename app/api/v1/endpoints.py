@@ -1,172 +1,131 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
-from sqlalchemy.orm import selectinload
-from typing import List
-from app.models.base import get_db
-from app.models import news as models
-from app.schemas import news as schemas
+from fastapi import APIRouter, HTTPException
+from typing import List, Optional
+from app.main import prisma
 
 router = APIRouter()
 
 @router.get("/digest/count")
-async def get_clusters_count(
-    category: str = None,
-    db: AsyncSession = Depends(get_db)
-):
-    from sqlalchemy import func
-    stmt = select(func.count(models.Cluster.id))
+async def get_clusters_count(category: str = None):
+    where = {}
     if category and category.lower() != "all":
-        stmt = stmt.filter(models.Cluster.category == category)
-    result = await db.execute(stmt)
-    return {"total": result.scalar()}
+        where = {"category": category}
+    
+    count = await prisma.cluster.count(where=where)
+    return {"total": count}
 
 @router.get("/categories")
-async def get_unique_categories(db: AsyncSession = Depends(get_db)):
-    stmt = select(models.Cluster.category).distinct()
-    result = await db.execute(stmt)
-    categories = [row[0] for row in result.all() if row[0]]
+async def get_unique_categories():
+    clusters = await prisma.cluster.find_many(
+        distinct=["category"],
+    )
+    categories = [c.category for c in clusters if c.category]
     return sorted(list(set(categories)))
 
 @router.get(
     "/digest", 
-    response_model=List[schemas.Cluster],
     summary="Get News Digest",
-    description="Retrieve a complete list of news clusters. Each cluster contains a topic name and its associated articles, synthesized from multiple sources."
+    description="Retrieve a complete list of news clusters. Each cluster contains a topic name and its associated articles."
 )
 async def read_digest(
     skip: int = 0, 
     limit: int = 20,
-    category: str = None,
-    db: AsyncSession = Depends(get_db)
+    category: str = None
 ):
-    stmt = (
-        select(models.Cluster)
-        .options(selectinload(models.Cluster.articles))
-    )
-    
+    where = {}
     if category and category.lower() != "all":
-        stmt = stmt.filter(models.Cluster.category == category)
+        where = {"category": category}
         
-    stmt = stmt.offset(skip).limit(limit)
-    result = await db.execute(stmt)
-    return result.scalars().all()
+    clusters = await prisma.cluster.find_many(
+        where=where,
+        take=limit,
+        skip=skip,
+        include={"articles": True},
+        order={"createdAt": "desc"}
+    )
+    return clusters
 
 @router.get(
     "/topic/{name}", 
-    response_model=List[schemas.Article],
-    summary="Get Articles by Topic",
-    description="Fetch all articles belonging to a specific topic name. The search is case-insensitive and supports partial matches (e.g., 'AI' will match 'Artificial Intelligence')."
+    summary="Get Articles by Topic"
 )
-async def read_articles_by_topic(
-    name: str, 
-    db: AsyncSession = Depends(get_db)
-):
-    stmt = (
-        select(models.Cluster)
-        .options(selectinload(models.Cluster.articles))
-        .filter(models.Cluster.topic_name.ilike(f"%{name}%"))
+async def read_articles_by_topic(name: str):
+    cluster = await prisma.cluster.find_first(
+        where={"topicName": {"contains": name, "mode": "insensitive"}},
+        include={"articles": True}
     )
-    result = await db.execute(stmt)
-    cluster = result.scalars().first()
     
     if not cluster:
         raise HTTPException(
             status_code=404, 
-            detail=f"Topic '{name}' not found. Try a different keyword."
+            detail=f"Topic '{name}' not found."
         )
         
     return cluster.articles
 
 @router.get("/subscriptions", response_model=List[str])
-async def get_subscriptions(db: AsyncSession = Depends(get_db)):
-    stmt = select(models.Subscription.category)
-    result = await db.execute(stmt)
-    return [row[0] for row in result.all()]
+async def get_subscriptions():
+    subs = await prisma.subscription.find_many()
+    return [s.category for s in subs]
 
 @router.post("/subscriptions/{category}")
-async def subscribe_category(category: str, db: AsyncSession = Depends(get_db)):
-    # Check if exists
-    stmt = select(models.Subscription).filter(models.Subscription.category == category)
-    result = await db.execute(stmt)
-    if result.scalars().first():
+async def subscribe_category(category: str):
+    existing = await prisma.subscription.find_unique(where={"category": category})
+    if existing:
         return {"message": f"Already subscribed to {category}"}
     
-    new_sub = models.Subscription(category=category)
-    db.add(new_sub)
-    await db.commit()
+    await prisma.subscription.create(data={"category": category})
     return {"message": f"Successfully subscribed to {category}"}
 
 @router.delete("/subscriptions/{category}")
-async def unsubscribe_category(category: str, db: AsyncSession = Depends(get_db)):
-    from sqlalchemy import delete
-    stmt = delete(models.Subscription).where(models.Subscription.category == category)
-    await db.execute(stmt)
-    await db.commit()
+async def unsubscribe_category(category: str):
+    await prisma.subscription.delete(where={"category": category})
     return {"message": f"Successfully unsubscribed from {category}"}
 
 @router.get("/stats")
-async def get_stats(db: AsyncSession = Depends(get_db)):
-    from sqlalchemy import func
-    from datetime import timezone
+async def get_stats():
     # 1. Last run
-    stmt = select(models.SystemStatus.last_run_at).filter(models.SystemStatus.id == 1)
-    res = await db.execute(stmt)
-    last_run = res.scalar()
-    
-    # Ensure it's returned as UTC ISO string for frontend
-    last_updated_str = None
-    if last_run:
-        if last_run.tzinfo is None:
-            last_run = last_run.replace(tzinfo=timezone.utc)
-        last_updated_str = last_run.isoformat()
+    status = await prisma.systemstatus.find_first(order={"lastRunAt": "desc"})
+    last_updated_str = status.lastRunAt.isoformat() if status else None
 
-    # 2. Source count
-    source_stmt = select(func.count(models.Article.source.distinct()))
-    source_res = await db.execute(source_stmt)
-    source_count = source_res.scalar()
+    # 2. Source count (Prisma doesn't have a direct distinct count for a field in MongoDB easily without grouping)
+    # We'll use find_many with distinct or just a raw count for now
+    articles = await prisma.article.find_many(distinct=["source"])
+    source_count = len(articles)
     
     return {
         "last_updated": last_updated_str,
-        "sources": source_count or 0
+        "sources": source_count
     }
 
-@router.get("/articles/saved", response_model=List[schemas.Article])
-async def get_saved_articles(db: AsyncSession = Depends(get_db)):
-    stmt = select(models.Article).join(models.SavedArticle)
-    result = await db.execute(stmt)
-    return result.scalars().all()
+@router.get("/articles/saved")
+async def get_saved_articles():
+    # Find articles that have at least one SavedArticle record
+    saved = await prisma.savedarticle.find_many(include={"article": True})
+    return [s.article for s in saved]
 
 @router.post("/articles/{article_id}/save")
-async def save_article(article_id: int, db: AsyncSession = Depends(get_db)):
-    stmt = select(models.SavedArticle).filter(models.SavedArticle.article_id == article_id)
-    result = await db.execute(stmt)
-    if result.scalars().first():
+async def save_article(article_id: str):
+    existing = await prisma.savedarticle.find_first(where={"articleId": article_id})
+    if existing:
         return {"message": "Already saved"}
     
-    new_saved = models.SavedArticle(article_id=article_id)
-    db.add(new_saved)
-    await db.commit()
+    await prisma.savedarticle.create(data={"articleId": article_id})
     return {"message": "Article saved"}
 
 @router.delete("/articles/{article_id}/save")
-async def unsave_article(article_id: int, db: AsyncSession = Depends(get_db)):
-    from sqlalchemy import delete
-    stmt = delete(models.SavedArticle).where(models.SavedArticle.article_id == article_id)
-    await db.execute(stmt)
-    await db.commit()
+async def unsave_article(article_id: str):
+    # We need to find the ID of the SavedArticle record to delete it
+    record = await prisma.savedarticle.find_first(where={"articleId": article_id})
+    if record:
+        await prisma.savedarticle.delete(where={"id": record.id})
     return {"message": "Article removed from saved"}
 
-@router.get(
-    "/health",
-    summary="Health Check",
-    description="Check if the API service and its background scheduler are active."
-)
+@router.get("/health")
 async def health_check():
     return {
         "status": "healthy",
-        "mode": "async",
-        "version": "1.0.0"
+        "mode": "nosql",
+        "version": "2.0.0"
     }
 
 @router.get("/debug/trigger")
@@ -174,16 +133,15 @@ async def remote_trigger():
     from app.scheduler.main import run_news_digest_pipeline
     import asyncio
     asyncio.create_task(run_news_digest_pipeline())
-    return {"message": "Pipeline triggered in background. Check your frontend in 1-2 minutes!"}
+    return {"message": "Pipeline triggered in background (MongoDB mode)."}
 
 @router.get("/debug/pulse")
-async def pulse_check(db: AsyncSession = Depends(get_db)):
-    from sqlalchemy import func
-    art_count = await db.execute(select(func.count(models.Article.id)))
-    sum_count = await db.execute(select(func.count(models.Article.id)).filter(models.Article.summary != None))
-    clu_count = await db.execute(select(func.count(models.Cluster.id)))
+async def pulse_check():
+    art_count = await prisma.article.count()
+    sum_count = await prisma.article.count(where={"summary": {"not": None}})
+    clu_count = await prisma.cluster.count()
     return {
-        "total_articles": art_count.scalar(),
-        "summarized_articles": sum_count.scalar(),
-        "total_clusters": clu_count.scalar()
+        "total_articles": art_count,
+        "summarized_articles": sum_count,
+        "total_clusters": clu_count
     }
