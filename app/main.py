@@ -69,3 +69,19 @@ async def manual_trigger():
     import asyncio
     asyncio.create_task(run_news_digest_pipeline())
     return {"status": "success", "message": "Pipeline started! Please refresh your frontend in 2 minutes."}
+
+@app.get("/pulse-check")
+async def pulse_check():
+    from sqlalchemy import func
+    from app.models.base import AsyncSessionLocal
+    from app.models import news as models
+    from sqlalchemy import select
+    async with AsyncSessionLocal() as db:
+        art_count = await db.execute(select(func.count(models.Article.id)))
+        sum_count = await db.execute(select(func.count(models.Article.id)).filter(models.Article.summary != None))
+        clu_count = await db.execute(select(func.count(models.Cluster.id)))
+        return {
+            "total_articles": art_count.scalar(),
+            "summarized_articles": sum_count.scalar(),
+            "total_clusters": clu_count.scalar()
+        }

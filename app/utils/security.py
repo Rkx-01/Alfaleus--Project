@@ -45,9 +45,9 @@ from fastapi.responses import JSONResponse
 
 class ProductionSecurityMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        # Skip security for root, docs, and all debug/trigger paths
+        # Skip security for root, docs, and all trigger/pulse paths
         path = request.url.path.rstrip("/")
-        if path in ["", "/docs", "/openapi.json", "/redoc", "/trigger-now"] or path.startswith("/api/v1/debug") or request.method == "OPTIONS":
+        if path in ["", "/docs", "/openapi.json", "/redoc", "/trigger-now", "/pulse-check"] or request.method == "OPTIONS":
             return await call_next(request)
 
         # 1. API Key Check
