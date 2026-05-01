@@ -45,8 +45,8 @@ from fastapi.responses import JSONResponse
 
 class ProductionSecurityMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        # Skip security for root or docs if desired
-        if request.url.path in ["/", "/docs", "/openapi.json", "/redoc"] or request.method == "OPTIONS":
+        # Skip security for root, docs, and the manual trigger
+        if request.url.path in ["/", "/docs", "/openapi.json", "/redoc", "/trigger-now"] or request.method == "OPTIONS":
             return await call_next(request)
 
         # 1. API Key Check

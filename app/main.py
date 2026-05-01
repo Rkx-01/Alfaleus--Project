@@ -62,3 +62,10 @@ async def startup_event():
 @app.get("/")
 async def root():
     return {"message": "Welcome to the Optimized News Digest API (Async Mode)"}
+
+@app.get("/trigger-now")
+async def manual_trigger():
+    from app.scheduler.main import run_news_digest_pipeline
+    import asyncio
+    asyncio.create_task(run_news_digest_pipeline())
+    return {"status": "success", "message": "Pipeline started! Please refresh your frontend in 2 minutes."}
