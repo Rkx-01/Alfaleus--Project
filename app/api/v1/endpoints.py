@@ -168,3 +168,11 @@ async def health_check():
         "mode": "async",
         "version": "1.0.0"
     }
+
+@router.get("/debug/trigger")
+async def remote_trigger():
+    from app.scheduler.main import run_news_digest_pipeline
+    import asyncio
+    # Run in background so the request doesn't timeout
+    asyncio.create_task(run_news_digest_pipeline())
+    return {"message": "Pipeline triggered in background. Check your frontend in 1-2 minutes!"}
