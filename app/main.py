@@ -1,4 +1,5 @@
 import logging
+import traceback
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,19 +14,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-from app.utils.security import ProductionSecurityMiddleware
-
 app = FastAPI(
     title="InsightMatrix API",
-    description="NoSQL News Aggregator with Prisma & MongoDB",
+    description="NoSQL News Aggregator",
     version="2.0.0",
-    openapi_url=f"{settings.API_V1_STR}/openapi.json"
 )
 
-# Register Security Middleware
-app.add_middleware(ProductionSecurityMiddleware)
-
-# CORS configuration (Outermost middleware)
+# 1. ADD CORS FIRST (Outermost)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -35,70 +30,40 @@ app.add_middleware(
     expose_headers=["*"],
 )
 
-# Global Exception Handler for Debugging
+# Global Exception Handler
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    import traceback
-    error_msg = f"Crash at {request.url.path}: {str(exc)}"
-    logger.error(error_msg)
-    logger.error(traceback.format_exc())
+    logger.error(f"GLOBAL CRASH: {str(exc)}")
     return JSONResponse(
         status_code=500,
         content={
             "error": "Internal Server Error",
             "message": str(exc),
-            "traceback": traceback.format_exc() if settings.DEBUG else None
-        },
-        headers={
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "*",
-            "Access-Control-Allow-Headers": "*"
+            "traceback": traceback.format_exc()
         }
     )
+
+# Temporarily disabled security middleware to find the crash cause
+# from app.utils.security import ProductionSecurityMiddleware
+# app.add_middleware(ProductionSecurityMiddleware)
 
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
 @app.on_event("startup")
 async def startup_event():
-    logger.info("Application starting up...")
     if db:
         try:
             await db.connect()
-            logger.info("Connected to MongoDB Atlas via Prisma.")
+            logger.info("Connected to MongoDB Atlas.")
         except Exception as e:
-            logger.error(f"Could not connect to database: {e}")
-    else:
-        logger.error("Database client (db.py) is missing or failed to initialize.")
-    
+            logger.error(f"DB Connect Error: {e}")
     setup_scheduler()
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    logger.info("Application shutting down...")
     if db and db.is_connected():
         await db.disconnect()
 
 @app.get("/")
 async def root():
-    return {"message": "InsightMatrix API is online (MongoDB Mode)"}
-
-@app.get("/pulse-check")
-async def pulse_check():
-    if not db:
-        return {"error": "Database not initialized"}
-    
-    art_count = await db.article.count()
-    sum_count = await db.article.count(where={"summary": {"not": None}})
-    clu_count = await db.cluster.count()
-    return {
-        "total_articles": art_count,
-        "summarized_articles": sum_count,
-        "total_clusters": clu_count
-    }
-
-@app.get("/trigger-now")
-async def manual_trigger():
-    from app.scheduler.main import run_news_digest_pipeline
-    import asyncio
-    asyncio.create_task(run_news_digest_pipeline())
-    return {"status": "success", "message": "Pipeline triggered."}
+    return {"status": "online"}
