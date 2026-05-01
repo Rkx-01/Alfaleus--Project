@@ -31,11 +31,12 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# CORS MIDDLEWARE (Ultra-Permissive for Vercel)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=False,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "OPTIONS", "PUT", "DELETE"],
     allow_headers=["*"],
     expose_headers=["*"],
 )
