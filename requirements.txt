@@ -1,7 +1,14 @@
 fastapi
-uvicorn
+uvicorn[standard]
 sqlalchemy
-pydantic
+psycopg2-binary
 pydantic-settings
 httpx
 apscheduler
+groq
+scikit-learn
+numpy
+python-dotenv
+tenacity
+asyncpg
+textblob
