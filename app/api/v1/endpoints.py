@@ -9,6 +9,10 @@ from datetime import datetime, timezone
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+@router.get("/")
+async def api_root():
+    return {"status": "online", "message": "InsightMatrix API v1"}
+
 def serialize_mongo(doc):
     if not doc: return doc
     doc["id"] = str(doc.pop("_id"))
