@@ -30,7 +30,12 @@ app = FastAPI(
 )
 
 # Initialize Prisma
-prisma = Prisma()
+try:
+    from prisma import Prisma
+    prisma = Prisma()
+except ImportError:
+    logger.error("Prisma client not found! Make sure 'python3 -m prisma generate' ran successfully.")
+    prisma = None
 
 # Register Security Middleware
 app.add_middleware(ProductionSecurityMiddleware)
@@ -49,8 +54,11 @@ app.include_router(api_router, prefix=settings.API_V1_STR)
 @app.on_event("startup")
 async def startup_event():
     logger.info("Application starting up...")
-    await prisma.connect()
-    logger.info("Connected to MongoDB Atlas via Prisma.")
+    if prisma:
+        await prisma.connect()
+        logger.info("Connected to MongoDB Atlas via Prisma.")
+    else:
+        logger.error("Application started without database connection (Prisma missing).")
     setup_scheduler()
 
 @app.on_event("shutdown")
