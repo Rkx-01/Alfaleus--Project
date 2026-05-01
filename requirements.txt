@@ -12,3 +12,4 @@ python-dotenv
 tenacity
 asyncpg
 textblob
+aiosqlite
