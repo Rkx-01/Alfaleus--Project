@@ -10,20 +10,16 @@ logger = logging.getLogger(__name__)
 
 class BaseCollector:
     def __init__(self):
-        self.timeout = httpx.Timeout(10.0, connect=5.0)
+        self.timeout = httpx.Timeout(15.0, connect=5.0)
 
     async def _get(self, url: str, params: Optional[dict] = None, headers: Optional[dict] = None):
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
+        async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=True) as client:
             try:
                 response = await client.get(url, params=params, headers=headers)
                 response.raise_for_status()
                 return response
-            except httpx.HTTPStatusError as e:
-                logger.error(f"HTTP error occurred: {e}")
-            except httpx.RequestError as e:
-                logger.error(f"An error occurred while requesting {e.request.url!r}: {e}")
             except Exception as e:
-                logger.error(f"Unexpected error: {e}")
+                logger.error(f"Error fetching {url}: {e}")
         return None
 
 class NewsAPICollector(BaseCollector):
@@ -32,24 +28,14 @@ class NewsAPICollector(BaseCollector):
         self.api_key = settings.NEWSAPI_API_KEY
         self.base_url = "https://newsapi.org/v2/top-headlines"
 
-    async def fetch(self, category: str = "general", country: str = "us") -> List[ArticleCreate]:
-        if not self.api_key:
-            logger.warning("NewsAPI API key not set. Skipping.")
-            return []
-
-        params = {
-            "apiKey": self.api_key,
-            "category": category,
-            "country": country
-        }
-        
+    async def fetch(self) -> List[ArticleCreate]:
+        if not self.api_key: return []
+        params = {"apiKey": self.api_key, "language": "en", "pageSize": 50}
         response = await self._get(self.base_url, params=params)
-        if not response:
-            return []
-
-        data = response.json()
+        if not response: return []
+        
         articles = []
-        for item in data.get("articles", []):
+        for item in response.json().get("articles", []):
             try:
                 articles.append(ArticleCreate(
                     title=item["title"],
@@ -59,70 +45,49 @@ class NewsAPICollector(BaseCollector):
                     source=item["source"]["name"],
                     published_at=datetime.fromisoformat(item["publishedAt"].replace("Z", "+00:00"))
                 ))
-            except (KeyError, ValueError) as e:
-                logger.error(f"Error parsing NewsAPI article: {e}")
-        
+            except: continue
         return articles
 
-class GoogleNewsRSSCollector(BaseCollector):
-    def __init__(self):
+class RSSCollector(BaseCollector):
+    def __init__(self, name: str, url: str, category: str = "World"):
         super().__init__()
-        self.rss_url = "https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en"
+        self.name = name
+        self.url = url
+        self.category = category
 
     async def fetch(self) -> List[ArticleCreate]:
-        response = await self._get(self.rss_url)
-        if not response:
-            return []
-
+        response = await self._get(self.url)
+        if not response: return []
         try:
             root = ET.fromstring(response.text)
             articles = []
             for item in root.findall(".//item"):
-                raw_title = item.find("title").text
+                title = item.find("title").text
                 url = item.find("link").text
-                pub_date_str = item.find("pubDate").text
-                
-                # Extract real source from title (e.g. "Headline - Publisher")
-                source_name = "Google RSS"
-                title = raw_title
-                if " - " in raw_title:
-                    parts = raw_title.rsplit(" - ", 1)
-                    title = parts[0].strip()
-                    source_name = parts[1].strip()
-                
-                # Example pubDate: Sat, 25 Apr 2026 13:00:00 GMT
-                try:
-                    pub_date = datetime.strptime(pub_date_str, "%a, %d %b %Y %H:%M:%S %Z")
-                except ValueError:
-                    pub_date = datetime.utcnow()
-
+                desc = item.find("description").text if item.find("description") is not None else ""
                 articles.append(ArticleCreate(
-                    title=title,
-                    description="", # RSS often doesn't have clean description
-                    content="", # RSS usually only has snippet
-                    url=url,
-                    source=source_name,
-                    published_at=pub_date
+                    title=title, description=desc, content=desc,
+                    url=url, source=self.name, category=self.category,
+                    published_at=datetime.utcnow()
                 ))
             return articles
-        except ET.ParseError as e:
-            logger.error(f"Error parsing Google News RSS: {e}")
-        
-        return []
+        except: return []
 
 async def collect_all_news() -> List[ArticleCreate]:
-    """
-    Orchestrate fetching from all available collectors.
-    """
     collectors = [
         NewsAPICollector(),
-        GoogleNewsRSSCollector()
+        RSSCollector("BBC News", "http://feeds.bbci.co.uk/news/rss.xml", "World"),
+        RSSCollector("CNN", "http://rss.cnn.com/rss/edition.rss", "World"),
+        RSSCollector("Reuters", "https://www.reutersagency.com/feed/", "Business"),
+        RSSCollector("TechCrunch", "https://techcrunch.com/feed/", "Technology"),
+        RSSCollector("The Verge", "https://www.theverge.com/rss/index.xml", "Technology"),
     ]
     
     all_articles = []
     for collector in collectors:
-        articles = await collector.fetch()
-        all_articles.extend(articles)
-        logger.info(f"Collected {len(articles)} articles from {collector.__class__.__name__}")
-    
+        try:
+            articles = await collector.fetch()
+            all_articles.extend(articles)
+            logger.info(f"Collected {len(articles)} articles from {collector.name if hasattr(collector, 'name') else 'NewsAPI'}")
+        except: continue
     return all_articles
