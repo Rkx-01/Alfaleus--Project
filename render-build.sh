@@ -3,4 +3,4 @@
 set -o errexit
 
 pip install -r requirements.txt
-npx prisma@6 generate
+python3 -m prisma generate
