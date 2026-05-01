@@ -6,6 +6,13 @@ from app.db import db as prisma
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+@router.get("/")
+async def api_root():
+    return {
+        "message": "Welcome to the News Digest API v1",
+        "endpoints": ["/digest", "/categories", "/subscriptions", "/stats", "/test"]
+    }
+
 async def ensure_db_connected():
     """Ensure database is connected before running a query."""
     if prisma and not prisma.is_connected():
