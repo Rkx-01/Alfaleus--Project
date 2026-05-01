@@ -6,10 +6,22 @@ from app.db import db as prisma
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+async def ensure_db_connected():
+    """Ensure database is connected before running a query."""
+    if prisma and not prisma.is_connected():
+        try:
+            await prisma.connect()
+            logger.info("Reconnected to database on-the-fly.")
+        except Exception as e:
+            logger.error(f"Failed to reconnect to database: {e}")
+
 @router.get("/digest/count")
 async def get_clusters_count(category: str = None):
     if not prisma:
         return {"count": 0}
+    
+    await ensure_db_connected()
+    
     try:
         where = {}
         if category and category.lower() != "all":
@@ -21,10 +33,11 @@ async def get_clusters_count(category: str = None):
 
 @router.get("/categories")
 async def get_unique_categories():
-    # Safe Fallback
     default_cats = ["Technology", "Politics", "Science", "Sports", "World"]
     if not prisma:
         return default_cats
+    
+    await ensure_db_connected()
     
     try:
         clusters = await prisma.cluster.find_many()
@@ -33,13 +46,14 @@ async def get_unique_categories():
         categories = {c.category for c in clusters if c.category}
         return sorted(list(categories)) if categories else default_cats
     except Exception as e:
-        logger.error(f"Categories Fetch Failed: {e}")
         return default_cats
 
 @router.get("/digest")
 async def read_digest(category: str = None, limit: int = 10):
     if not prisma:
         return []
+    
+    await ensure_db_connected()
     
     try:
         where = {}
@@ -54,34 +68,19 @@ async def read_digest(category: str = None, limit: int = 10):
         )
         return clusters
     except Exception as e:
-        logger.error(f"Digest Fetch Failed: {e}")
         return []
-
-@router.get("/topic/{topic_id}")
-async def get_topic_details(topic_id: str):
-    if not prisma:
-        raise HTTPException(status_code=503, detail="Database Offline")
-    try:
-        topic = await prisma.cluster.find_unique(
-            where={"id": topic_id},
-            include={"articles": True}
-        )
-        if not topic:
-            raise HTTPException(status_code=404, detail="Topic not found")
-        return topic
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/stats")
 async def get_stats():
     if not prisma:
         return {"last_updated": None, "sources": 0}
         
+    await ensure_db_connected()
+    
     try:
         status = await prisma.systemstatus.find_first(order={"lastRunAt": "desc"})
         last_updated = status.lastRunAt.isoformat() if status else None
         
-        # In MongoDB, we fetch all and set-ify to avoid 'distinct' crash
         articles = await prisma.article.find_many()
         sources = {a.source for a in articles if a.source}
         
