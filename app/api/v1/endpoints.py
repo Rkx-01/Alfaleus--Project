@@ -6,6 +6,8 @@ router = APIRouter()
 
 @router.get("/digest/count")
 async def get_clusters_count(category: str = None):
+    if not prisma:
+        raise HTTPException(status_code=503, detail="Database not initialized")
     where = {}
     if category and category.lower() != "all":
         where = {"category": category}
@@ -15,9 +17,11 @@ async def get_clusters_count(category: str = None):
 
 @router.get("/categories")
 async def get_unique_categories():
-    clusters = await prisma.cluster.find_many(
-        distinct=["category"],
-    )
+    if not prisma:
+        raise HTTPException(status_code=503, detail="Database not initialized")
+    
+    # MongoDB Prisma doesn't support 'distinct' directly on find_many
+    clusters = await prisma.cluster.find_many()
     categories = [c.category for c in clusters if c.category]
     return sorted(list(set(categories)))
 
@@ -83,18 +87,20 @@ async def unsubscribe_category(category: str):
 
 @router.get("/stats")
 async def get_stats():
+    if not prisma:
+        return {"last_updated": None, "sources": 0}
+        
     # 1. Last run
     status = await prisma.systemstatus.find_first(order={"lastRunAt": "desc"})
     last_updated_str = status.lastRunAt.isoformat() if status else None
 
-    # 2. Source count (Prisma doesn't have a direct distinct count for a field in MongoDB easily without grouping)
-    # We'll use find_many with distinct or just a raw count for now
-    articles = await prisma.article.find_many(distinct=["source"])
-    source_count = len(articles)
+    # 2. Source count (Fetch and filter in Python for MongoDB)
+    articles = await prisma.article.find_many()
+    sources = {a.source for a in articles if a.source}
     
     return {
         "last_updated": last_updated_str,
-        "sources": source_count
+        "sources": len(sources)
     }
 
 @router.get("/articles/saved")
