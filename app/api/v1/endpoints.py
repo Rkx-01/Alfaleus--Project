@@ -72,12 +72,21 @@ async def test_route():
 
 @router.get("/debug")
 async def debug_database():
-    await ensure_db_connected()
+    import traceback
     try:
-        articles = await prisma.article.count()
-        clusters = await prisma.cluster.count()
         from app.db import check_db_health
         health, msg = await check_db_health()
+        
+        # If check failed, try a raw connect to get the real error
+        if not health:
+            return {
+                "db_health": health,
+                "health_msg": msg,
+                "traceback": traceback.format_exc()
+            }
+            
+        articles = await prisma.article.count()
+        clusters = await prisma.cluster.count()
         return {
             "articles_in_db": articles, 
             "clusters_in_db": clusters,
@@ -85,4 +94,7 @@ async def debug_database():
             "health_msg": msg
         }
     except Exception as e: 
-        return {"error": str(e)}
+        return {
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }
