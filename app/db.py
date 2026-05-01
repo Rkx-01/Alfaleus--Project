@@ -16,7 +16,8 @@ class Database:
         
         try:
             self.client = AsyncIOMotorClient(db_url)
-            self.db = self.client.get_default_database()
+            # Force the database name to 'InsightMatrix'
+            self.db = self.client["InsightMatrix"]
             # Test connection
             await self.client.admin.command('ping')
             logger.info("Successfully connected to MongoDB via Motor!")
