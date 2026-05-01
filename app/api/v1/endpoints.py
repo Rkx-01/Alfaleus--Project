@@ -18,12 +18,16 @@ async def get_clusters_count(category: str = None):
 @router.get("/categories")
 async def get_unique_categories():
     if not prisma:
-        raise HTTPException(status_code=503, detail="Database not initialized")
+        return []
     
-    # MongoDB Prisma doesn't support 'distinct' directly on find_many
-    clusters = await prisma.cluster.find_many()
-    categories = [c.category for c in clusters if c.category]
-    return sorted(list(set(categories)))
+    try:
+        # MongoDB Prisma doesn't support 'distinct' directly on find_many
+        clusters = await prisma.cluster.find_many()
+        categories = [c.category for c in clusters if c.category]
+        return sorted(list(set(categories)))
+    except Exception as e:
+        logger.error(f"Error fetching categories: {e}")
+        return ["Technology", "Politics", "Science", "Sports"] # Fallback
 
 @router.get(
     "/digest", 
@@ -90,18 +94,22 @@ async def get_stats():
     if not prisma:
         return {"last_updated": None, "sources": 0}
         
-    # 1. Last run
-    status = await prisma.systemstatus.find_first(order={"lastRunAt": "desc"})
-    last_updated_str = status.lastRunAt.isoformat() if status else None
+    try:
+        # 1. Last run
+        status = await prisma.systemstatus.find_first(order={"lastRunAt": "desc"})
+        last_updated_str = status.lastRunAt.isoformat() if status else None
 
-    # 2. Source count (Fetch and filter in Python for MongoDB)
-    articles = await prisma.article.find_many()
-    sources = {a.source for a in articles if a.source}
-    
-    return {
-        "last_updated": last_updated_str,
-        "sources": len(sources)
-    }
+        # 2. Source count
+        articles = await prisma.article.find_many()
+        sources = {a.source for a in articles if a.source}
+        
+        return {
+            "last_updated": last_updated_str,
+            "sources": len(sources)
+        }
+    except Exception as e:
+        logger.error(f"Error fetching stats: {e}")
+        return {"last_updated": None, "sources": 0}
 
 @router.get("/articles/saved")
 async def get_saved_articles():
