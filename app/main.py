@@ -20,7 +20,7 @@ app = FastAPI(
     version="2.0.0",
 )
 
-# 1. ADD CORS FIRST (Outermost)
+# CORS configuration
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -30,7 +30,7 @@ app.add_middleware(
     expose_headers=["*"],
 )
 
-# Global Exception Handler
+# Global Exception Handler with FIXED CORS HEADERS
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     logger.error(f"GLOBAL CRASH: {str(exc)}")
@@ -40,23 +40,28 @@ async def global_exception_handler(request: Request, exc: Exception):
             "error": "Internal Server Error",
             "message": str(exc),
             "traceback": traceback.format_exc()
+        },
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "*",
+            "Access-Control-Allow-Headers": "*"
         }
     )
-
-# Temporarily disabled security middleware to find the crash cause
-# from app.utils.security import ProductionSecurityMiddleware
-# app.add_middleware(ProductionSecurityMiddleware)
 
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
 @app.on_event("startup")
 async def startup_event():
+    logger.info("Starting application...")
     if db:
         try:
             await db.connect()
             logger.info("Connected to MongoDB Atlas.")
         except Exception as e:
             logger.error(f"DB Connect Error: {e}")
+    else:
+        logger.error("DB client is None - Database functionality will be disabled.")
+    
     setup_scheduler()
 
 @app.on_event("shutdown")
@@ -66,4 +71,4 @@ async def shutdown_event():
 
 @app.get("/")
 async def root():
-    return {"status": "online"}
+    return {"status": "online", "db_connected": db.is_connected() if db else False}
