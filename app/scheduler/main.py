@@ -18,13 +18,12 @@ async def run_news_digest_pipeline():
     try:
         # 1. Fetch & Store
         raw_articles = await collect_all_news()
-        logger.info(f"📥 Fetched {len(raw_articles)} articles from raw sources.")
+        logger.info(f"📥 Fetched {len(raw_articles)} articles.")
         
         if not raw_articles:
-            logger.warning("⚠️ No articles found in sources. Exiting pipeline.")
+            logger.warning("⚠️ No articles found. Sources might be empty.")
             return
 
-        added_count = 0
         for data in raw_articles:
             try:
                 await prisma.article.upsert(
@@ -38,42 +37,32 @@ async def run_news_digest_pipeline():
                             "content": data.content,
                             "publishedAt": data.published_at
                         },
-                        "update": {
-                            "title": data.title 
-                        }
+                        "update": {"title": data.title}
                     }
                 )
-                added_count += 1
             except Exception as e:
-                logger.error(f"Error upserting article {data.url}: {e}")
-
-        logger.info(f"✅ Database updated: {added_count} articles processed.")
+                logger.error(f"Error upserting {data.url}: {e}")
 
         # 2. AI Summarization
         to_summarize = await prisma.article.find_many(
             where={"summary": None},
-            take=30 # Limit to avoid hitting LLM rate limits
+            take=20
         )
         
         if to_summarize:
-            logger.info(f"🤖 Summarizing {len(to_summarize)} new articles using AI...")
+            logger.info(f"🤖 AI is summarizing {len(to_summarize)} articles...")
             tasks = [generate_summary(a.content or a.title) for a in to_summarize]
             summaries = await asyncio.gather(*tasks, return_exceptions=True)
             
             for article, summary in zip(to_summarize, summaries):
-                if isinstance(summary, Exception) or not summary:
-                    continue
-                
+                if isinstance(summary, Exception) or not summary: continue
                 sentiment = get_sentiment(summary)
                 await prisma.article.update(
                     where={"id": article.id},
                     data={"summary": summary, "sentiment": sentiment}
                 )
-            logger.info("✨ Summarization complete.")
 
         # 3. Intelligent Clustering
-        # In MongoDB, we'll fetch articles and filter in Python to find unclustered ones
-        # This is safer than relying on complex MongoDB 'isEmpty' filters in Prisma
         all_articles = await prisma.article.find_many(
             where={"summary": {"not": None}},
             order={"createdAt": "desc"},
@@ -82,13 +71,12 @@ async def run_news_digest_pipeline():
         
         unclustered = [a for a in all_articles if not a.clusterIds]
         
-        if len(unclustered) < 3:
-            logger.info(f"ℹ️ Only {len(unclustered)} unclustered articles. Waiting for more data before clustering.")
-        else:
-            logger.info(f"🧩 Clustering {len(unclustered)} articles into topics...")
+        if unclustered:
+            logger.info(f"🧩 Clustering {len(unclustered)} articles...")
             clusters_data = await cluster_articles(unclustered)
             
             for c_data in clusters_data:
+                # LOWERED THRESHOLD TO 1 FOR IMMEDIATE VISIBILITY
                 if len(c_data["articles"]) >= 1:
                     await prisma.cluster.create(
                         data={
@@ -99,9 +87,9 @@ async def run_news_digest_pipeline():
                             }
                         }
                     )
-            logger.info(f"📁 Created {len(clusters_data)} new trending topics.")
+            logger.info(f"📁 Created {len(clusters_data)} new topics.")
 
-        # 4. Status Update
+        # 4. Update Status
         status = await prisma.systemstatus.find_first()
         if not status:
             await prisma.systemstatus.create(data={"lastRunAt": datetime.now(timezone.utc)})
@@ -112,19 +100,19 @@ async def run_news_digest_pipeline():
             )
 
     except Exception as e:
-        logger.error(f"❌ Pipeline Failed: {e}", exc_info=True)
+        logger.error(f"❌ Pipeline Failed: {e}")
 
 scheduler = AsyncIOScheduler()
 
 def setup_scheduler():
-    # Only add job if it doesn't exist
     if not scheduler.get_job("news_pipeline_job"):
         scheduler.add_job(
             run_news_digest_pipeline, 
             "interval", 
             minutes=settings.COLLECT_INTERVAL_MINUTES,
-            id="news_pipeline_job"
+            id="news_pipeline_job",
+            next_run_time=datetime.now() # START IMMEDIATELY ON BOOT
         )
     if not scheduler.running:
         scheduler.start()
-        logger.info("⏰ Scheduler started.")
+        logger.info("⏰ Scheduler started (Immediate mode).")
