@@ -173,6 +173,17 @@ async def health_check():
 async def remote_trigger():
     from app.scheduler.main import run_news_digest_pipeline
     import asyncio
-    # Run in background so the request doesn't timeout
     asyncio.create_task(run_news_digest_pipeline())
     return {"message": "Pipeline triggered in background. Check your frontend in 1-2 minutes!"}
+
+@router.get("/debug/pulse")
+async def pulse_check(db: AsyncSession = Depends(get_db)):
+    from sqlalchemy import func
+    art_count = await db.execute(select(func.count(models.Article.id)))
+    sum_count = await db.execute(select(func.count(models.Article.id)).filter(models.Article.summary != None))
+    clu_count = await db.execute(select(func.count(models.Cluster.id)))
+    return {
+        "total_articles": art_count.scalar(),
+        "summarized_articles": sum_count.scalar(),
+        "total_clusters": clu_count.scalar()
+    }
