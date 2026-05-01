@@ -70,15 +70,17 @@ async def generate_summary(article_text: str) -> str:
         final_summary = "\n".join(lines[:2])
         _summary_cache[cache_key] = final_summary
         return final_summary
-    except SummarizationError:
-        return "Failed to generate summary."
+    except Exception:
+        # FALLBACK: Just use the first part of the text
+        fallback = article_text[:200] + "..." if len(article_text) > 200 else article_text
+        return fallback
 
 def get_sentiment(text: str) -> str:
     """
     Analyze sentiment of the given text using TextBlob.
     Returns: positive / neutral / negative
     """
-    if not text:
+    if not text or len(text) < 10:
         return "neutral"
     
     blob = TextBlob(text)
@@ -102,9 +104,8 @@ async def extract_topic_name_async(articles: List[Article]) -> Dict[str, str]:
     prompt = (
         "Analyze these news headlines and provide:\n"
         "1. A very short 2-3 word topic title.\n"
-        "2. A single-word broad category. Choose the BEST fit from: Politics, Sports, Tech, Business, Health, Science, Entertainment, Crime, International.\n"
-        "Avoid using 'General' unless absolutely necessary. Return ONLY the category from the list above.\n"
-        "Format your response EXACTLY like this: Topic Title | Category\n\n"
+        "2. A single-word broad category: Politics, Sports, Tech, Business, Health, Science, Entertainment, Crime, International.\n"
+        "Format: Topic Title | Category\n\n"
         f"Headlines:\n{titles}"
     )
     try:
@@ -115,9 +116,10 @@ async def extract_topic_name_async(articles: List[Article]) -> Dict[str, str]:
                 "topic": parts[0].strip().replace('"', ''),
                 "category": parts[1].strip().title()
             }
-        return {"topic": response.strip().replace('"', ''), "category": "General"}
-    except SummarizationError:
-        return {"topic": articles[0].title[:100], "category": "General"}
+        return {"topic": response.strip()[:50], "category": "General"}
+    except Exception:
+        # FALLBACK: Use the first title
+        return {"topic": articles[0].title[:50], "category": "General"}
 
 async def cluster_articles(articles: List[Article], threshold: float = 0.22) -> List[Dict]:
     """
