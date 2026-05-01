@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from typing import List, Optional
-from app.main import prisma
+from app.db import db as prisma
 
 router = APIRouter()
 

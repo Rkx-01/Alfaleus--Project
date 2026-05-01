@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from app.services.collector import collect_all_news
 from app.services.processor import cluster_articles, generate_summary, get_sentiment
-from app.main import prisma
+from app.db import db as prisma
 from app.utils.config import settings
 
 logger = logging.getLogger(__name__)
