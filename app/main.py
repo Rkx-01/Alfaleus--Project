@@ -1,5 +1,6 @@
 import logging
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1.endpoints import router as api_router
 from app.utils.config import settings
@@ -24,14 +25,36 @@ app = FastAPI(
 # Register Security Middleware
 app.add_middleware(ProductionSecurityMiddleware)
 
-# CORS configuration
+# CORS configuration (Outermost middleware)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], 
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
+
+# Global Exception Handler for Debugging
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    import traceback
+    error_msg = f"Crash at {request.url.path}: {str(exc)}"
+    logger.error(error_msg)
+    logger.error(traceback.format_exc())
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": "Internal Server Error",
+            "message": str(exc),
+            "traceback": traceback.format_exc() if settings.DEBUG else None
+        },
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "*",
+            "Access-Control-Allow-Headers": "*"
+        }
+    )
 
 app.include_router(api_router, prefix=settings.API_V1_STR)
 

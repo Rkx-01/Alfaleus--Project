@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     GROQ_API_KEY: Optional[str] = None
     NEWSAPI_API_KEY: Optional[str] = None
     API_KEY: str = "supersecretapikey" # Default for demo
+    DEBUG: bool = True
     
     # Scheduler
     COLLECT_INTERVAL_MINUTES: int = 30
