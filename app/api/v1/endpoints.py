@@ -125,4 +125,7 @@ async def get_saved_articles():
 
 @router.get("/test")
 async def test_route():
-    return {"status": "ok", "message": "Backend is reachable!"}
+    from app.scheduler.main import run_news_digest_pipeline
+    import asyncio
+    asyncio.create_task(run_news_digest_pipeline())
+    return {"status": "ok", "message": "Backend is reachable and Sync triggered!"}
