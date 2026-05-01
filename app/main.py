@@ -16,11 +16,11 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="InsightMatrix API",
-    description="NoSQL News Aggregator",
+    description="NoSQL AI News Aggregator",
     version="2.0.0",
 )
 
-# CORS configuration
+# 1. CORS MIDDLEWARE (Must be Outermost)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -30,16 +30,17 @@ app.add_middleware(
     expose_headers=["*"],
 )
 
-# Global Exception Handler with FIXED CORS HEADERS
+# 2. GLOBAL ERROR HANDLER (With CORS Headers)
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    logger.error(f"GLOBAL CRASH: {str(exc)}")
+    logger.error(f"FATAL CRASH: {request.url.path} - {str(exc)}")
     return JSONResponse(
         status_code=500,
         content={
+            "status": "error",
             "error": "Internal Server Error",
-            "message": str(exc),
-            "traceback": traceback.format_exc()
+            "details": str(exc),
+            "path": request.url.path
         },
         headers={
             "Access-Control-Allow-Origin": "*",
@@ -48,20 +49,20 @@ async def global_exception_handler(request: Request, exc: Exception):
         }
     )
 
+# 3. ROUTES
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
 @app.on_event("startup")
 async def startup_event():
-    logger.info("Starting application...")
+    logger.info("Initializing Application...")
     if db:
         try:
             await db.connect()
-            logger.info("Connected to MongoDB Atlas.")
+            logger.info("Database Connection Established.")
         except Exception as e:
-            logger.error(f"DB Connect Error: {e}")
-    else:
-        logger.error("DB client is None - Database functionality will be disabled.")
+            logger.error(f"Initial DB Connection Failed: {e}")
     
+    # Start background scheduler
     setup_scheduler()
 
 @app.on_event("shutdown")
@@ -71,4 +72,14 @@ async def shutdown_event():
 
 @app.get("/")
 async def root():
-    return {"status": "online", "db_connected": db.is_connected() if db else False}
+    return {
+        "status": "online",
+        "database": "connected" if (db and db.is_connected()) else "disconnected"
+    }
+
+@app.get("/trigger-now")
+async def manual_trigger():
+    from app.scheduler.main import run_news_digest_pipeline
+    import asyncio
+    asyncio.create_task(run_news_digest_pipeline())
+    return {"status": "success", "message": "Manual sync triggered."}
