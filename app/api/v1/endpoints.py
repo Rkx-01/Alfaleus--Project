@@ -70,12 +70,15 @@ async def read_digest(category: str = None, limit: int = 10):
         clusters = await prisma.cluster.find_many(
             where=where, take=limit, order={"createdAt": "desc"}, include={"articles": True}
         )
-        # FALLBACK TO MOCK IF DB EMPTY
         if not clusters:
             return [c for c in MOCK_CLUSTERS if not category or category.lower() == "all" or c["category"] == category][:limit]
         return clusters
     except:
         return MOCK_CLUSTERS[:limit]
+
+@router.get("/articles/saved")
+async def get_saved_articles():
+    return [] # Return empty list for now so UI doesn't crash
 
 @router.get("/categories")
 async def get_unique_categories():
