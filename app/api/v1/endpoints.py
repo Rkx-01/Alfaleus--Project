@@ -90,3 +90,32 @@ async def get_stats():
         }
     except Exception:
         return {"last_updated": None, "sources": 0}
+
+@router.get("/subscriptions")
+async def get_subscriptions():
+    if not prisma: return []
+    await ensure_db_connected()
+    try:
+        return await prisma.subscription.find_many()
+    except: return []
+
+@router.post("/subscriptions")
+async def create_subscription(data: dict):
+    if not prisma: raise HTTPException(status_code=503)
+    await ensure_db_connected()
+    try:
+        return await prisma.subscription.create(data={"email": data["email"]})
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.get("/articles/saved")
+async def get_saved_articles():
+    if not prisma: return []
+    await ensure_db_connected()
+    try:
+        return await prisma.savedarticle.find_many()
+    except: return []
+
+@router.get("/test")
+async def test_route():
+    return {"status": "ok", "message": "Backend is reachable!"}

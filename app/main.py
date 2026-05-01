@@ -80,5 +80,9 @@ app.include_router(api_router, prefix=settings.API_V1_STR)
 async def root():
     return {
         "status": "online",
-        "db_connected": db.is_connected() if db else False
+        "database": "connected" if (db and db.is_connected()) else "disconnected"
     }
+
+@app.get("/test")
+async def test_root():
+    return {"status": "ok", "message": "Main App is reachable!"}
