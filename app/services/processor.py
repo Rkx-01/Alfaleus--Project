@@ -165,3 +165,70 @@ async def cluster_articles(articles: List[Article], threshold: float = 0.22) -> 
         })
         
     return clusters
+
+async def extract_topic_name_motor(articles: list) -> dict:
+    if not articles:
+        return {"topic": "Unknown", "category": "General"}
+    
+    titles = "\n".join([f"- {a.get('title')}" for a in articles])
+    prompt = (
+        "Analyze these news headlines and provide:\n"
+        "1. A very short 2-3 word topic title.\n"
+        "2. A single-word broad category: Politics, Sports, Tech, Business, Health, Science, Entertainment, Crime, International.\n"
+        "Format: Topic Title | Category\n\n"
+        f"Headlines:\n{titles}"
+    )
+    try:
+        # We need to make sure _call_groq_with_retry is available or use a simplified version
+        from groq import AsyncGroq
+        from app.utils.config import settings
+        client = AsyncGroq(api_key=settings.GROQ_API_KEY)
+        response = await client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[{"role": "user", "content": prompt}]
+        )
+        content = response.choices[0].message.content
+        if "|" in content:
+            parts = content.split("|")
+            return {
+                "topic": parts[0].strip().replace('"', ''),
+                "category": parts[1].strip().title()
+            }
+        return {"topic": content.strip()[:50], "category": "General"}
+    except Exception:
+        return {"topic": articles[0].get("title")[:50], "category": "General"}
+
+async def cluster_articles_motor(articles: list, threshold: float = 0.22) -> list:
+    if not articles:
+        return []
+
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    from sklearn.metrics.pairwise import cosine_similarity
+    
+    texts = [f"{a.get('title')} {a.get('content') or ''}" for a in articles]
+    vectorizer = TfidfVectorizer(stop_words='english')
+    tfidf_matrix = vectorizer.fit_transform(texts)
+    similarity_matrix = cosine_similarity(tfidf_matrix)
+    
+    groups = []
+    visited = [False] * len(articles)
+    
+    for i in range(len(articles)):
+        if visited[i]: continue
+        current_article_group = [articles[i]]
+        visited[i] = True
+        for j in range(i + 1, len(articles)):
+            if not visited[j] and similarity_matrix[i][j] >= threshold:
+                current_article_group.append(articles[j])
+                visited[j] = True
+        groups.append(current_article_group)
+        
+    clusters = []
+    for group in groups:
+        data = await extract_topic_name_motor(group)
+        clusters.append({
+            "topic_name": data["topic"],
+            "category": data["category"],
+            "articles": group
+        })
+    return clusters

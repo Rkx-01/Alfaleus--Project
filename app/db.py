@@ -1,37 +1,41 @@
 import logging
-import asyncio
 import os
+from motor.motor_asyncio import AsyncIOMotorClient
 
 logger = logging.getLogger(__name__)
 
-try:
-    from prisma import Prisma
-    # Explicitly pass the URL from environment to the client
-    db_url = os.getenv("DATABASE_URL")
-    if db_url:
-        db = Prisma(datasource={"url": db_url})
-        logger.info("Prisma Client initialized with environment URL.")
-    else:
-        db = Prisma()
-        logger.warning("DATABASE_URL not found in environment. Using default.")
-except Exception as e:
-    logger.error(f"CRITICAL: Prisma Import Failed: {e}")
+class Database:
+    client: AsyncIOMotorClient = None
     db = None
 
-async def check_db_health():
-    if not db:
-        return False, "Prisma client not initialized"
-    
-    try:
-        # Check if connected, if not, try connecting with a timeout
-        if not db.is_connected():
-            logger.info("Attempting diagnostic connection...")
-            await asyncio.wait_for(db.connect(), timeout=10.0)
+    async def connect(self):
+        db_url = os.getenv("DATABASE_URL")
+        if not db_url:
+            logger.error("DATABASE_URL not found!")
+            return
         
-        count = await db.article.count()
-        return True, f"Connected! Article count: {count}"
-    except asyncio.TimeoutError:
-        return False, "Connection timed out after 10 seconds."
+        try:
+            self.client = AsyncIOMotorClient(db_url)
+            self.db = self.client.get_default_database()
+            # Test connection
+            await self.client.admin.command('ping')
+            logger.info("Successfully connected to MongoDB via Motor!")
+        except Exception as e:
+            logger.error(f"Motor connection failed: {e}")
+
+    async def disconnect(self):
+        if self.client:
+            self.client.close()
+            logger.info("Motor connection closed.")
+
+db_manager = Database()
+
+# Helper for health check
+async def check_db_health():
+    if not db_manager.client:
+        return False, "Motor client not initialized"
+    try:
+        await db_manager.client.admin.command('ping')
+        return True, "Motor is healthy"
     except Exception as e:
-        logger.error(f"Database Health Check Failed: {e}")
         return False, str(e)

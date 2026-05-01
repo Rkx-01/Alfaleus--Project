@@ -10,3 +10,5 @@ scikit-learn
 tenacity
 textblob
 prisma==0.15.0
+motor
+dnspython

@@ -1,67 +1,64 @@
 import logging
 from fastapi import APIRouter, HTTPException
 from typing import List, Optional
-from app.db import db as prisma
+from app.db import db_manager, check_db_health
+from bson import ObjectId
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-async def ensure_db_connected():
-    if prisma and not prisma.is_connected():
-        try: await prisma.connect()
-        except: pass
+def serialize_mongo(doc):
+    if not doc: return doc
+    doc["id"] = str(doc.pop("_id"))
+    return doc
 
 @router.get("/digest")
 async def read_digest(category: str = None, limit: int = 10):
-    await ensure_db_connected()
     try:
-        where = {}
-        if category and category.lower() != "all": 
-            where = {"category": category}
+        query = {}
+        if category and category.lower() != "all":
+            query["category"] = category
+            
+        cursor = db_manager.db.clusters.find(query).sort("createdAt", -1).limit(limit)
+        clusters = await cursor.to_list(length=limit)
         
-        clusters = await prisma.cluster.find_many(
-            where=where, 
-            take=limit, 
-            order={"createdAt": "desc"}, 
-            include={"articles": True}
-        )
+        # Hydrate articles
+        for cluster in clusters:
+            article_ids = [ObjectId(aid) for aid in cluster.get("articleIds", [])]
+            articles_cursor = db_manager.db.articles.find({"_id": {"$in": article_ids}})
+            cluster["articles"] = [serialize_mongo(a) for a in await articles_cursor.to_list(length=100)]
+            serialize_mongo(cluster)
+            
         return clusters
     except Exception as e:
-        logger.error(f"Error fetching digest: {e}")
+        logger.error(f"Digest fetch error: {e}")
         return []
 
 @router.get("/digest/count")
 async def get_digest_count(category: str = None):
-    await ensure_db_connected()
     try:
-        where = {}
-        if category and category.lower() != "all": 
-            where = {"category": category}
-        return await prisma.cluster.count(where=where)
-    except Exception as e:
-        logger.error(f"Error fetching count: {e}")
-        return 0
+        query = {}
+        if category and category.lower() != "all":
+            query["category"] = category
+        return await db_manager.db.clusters.count_documents(query)
+    except: return 0
 
 @router.get("/articles/saved")
-async def get_saved_articles(): 
-    return []
+async def get_saved_articles(): return []
 
 @router.get("/categories")
-async def get_unique_categories(): 
+async def get_unique_categories():
     return ["Technology", "Politics", "Science", "Sports", "World"]
 
 @router.get("/stats")
-async def get_stats(): 
-    await ensure_db_connected()
+async def get_stats():
     try:
-        articles = await prisma.article.count()
-        return {"last_updated": "Just now", "sources": articles}
-    except:
-        return {"last_updated": "Unknown", "sources": 0}
+        count = await db_manager.db.articles.count_documents({})
+        return {"last_updated": "Just now", "sources": count}
+    except: return {"sources": 0}
 
 @router.get("/subscriptions")
-async def get_subscriptions(): 
-    return []
+async def get_subscriptions(): return []
 
 @router.get("/test")
 async def test_route():
@@ -72,29 +69,16 @@ async def test_route():
 
 @router.get("/debug")
 async def debug_database():
-    import traceback
+    health, msg = await check_db_health()
     try:
-        from app.db import check_db_health
-        health, msg = await check_db_health()
-        
-        # If check failed, try a raw connect to get the real error
-        if not health:
-            return {
-                "db_health": health,
-                "health_msg": msg,
-                "traceback": traceback.format_exc()
-            }
-            
-        articles = await prisma.article.count()
-        clusters = await prisma.cluster.count()
+        articles = await db_manager.db.articles.count_documents({})
+        clusters = await db_manager.db.clusters.count_documents({})
         return {
-            "articles_in_db": articles, 
+            "articles_in_db": articles,
             "clusters_in_db": clusters,
             "db_health": health,
-            "health_msg": msg
+            "health_msg": msg,
+            "engine": "Motor"
         }
-    except Exception as e: 
-        return {
-            "error": str(e),
-            "traceback": traceback.format_exc()
-        }
+    except Exception as e:
+        return {"error": str(e), "engine": "Motor"}
