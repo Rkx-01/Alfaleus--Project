@@ -6,12 +6,22 @@ from app.db import db as prisma
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-@router.get("/")
-async def api_root():
-    return {
-        "message": "Welcome to the News Digest API v1",
-        "endpoints": ["/digest", "/categories", "/subscriptions", "/stats", "/test"]
-    }
+@router.get("/debug")
+async def debug_database():
+    if not prisma:
+        return {"error": "Database not initialized"}
+    await ensure_db_connected()
+    try:
+        articles = await prisma.article.count()
+        clusters = await prisma.cluster.count()
+        system_status = await prisma.systemstatus.find_first()
+        return {
+            "articles_in_db": articles,
+            "clusters_in_db": clusters,
+            "last_run": system_status.lastRunAt if system_status else None
+        }
+    except Exception as e:
+        return {"error": str(e)}
 
 async def ensure_db_connected():
     """Ensure database is connected before running a query."""
