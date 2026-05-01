@@ -1,5 +1,10 @@
 import logging
 import traceback
+import os
+
+# CRITICAL: Force Render Compatibility
+os.environ["PRISMA_PY_DEBUG"] = "1"
+os.environ["PRISMA_CLI_BINARY_TARGETS"] = "native,debian-openssl-1.1.x,debian-openssl-3.0.x"
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
