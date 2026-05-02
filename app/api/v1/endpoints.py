@@ -118,7 +118,7 @@ async def get_stats():
     await ensure_db()
     try:
         count = await db_manager.db.articles.count_documents({})
-        return {"last_updated": datetime.now().isoformat(), "sources": count}
+        return {"last_updated": datetime.now(timezone.utc).isoformat(), "sources": count}
     except: return {"sources": 0}
 
 @router.get("/subscriptions")
