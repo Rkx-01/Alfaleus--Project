@@ -1,47 +1,33 @@
 import logging
 import traceback
-import os
-from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1.endpoints import router as api_router
 from app.utils.config import settings
-from app.scheduler.main import setup_scheduler
 from app.db import db_manager
+from app.scheduler.main import setup_scheduler
 
-# Enhanced Logging
+# Simple, direct logging
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("API_DIAGNOSTIC")
+logger = logging.getLogger("PRODUCTION_STABLE")
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    logger.info("🚀 API WAKING UP...")
-    await db_manager.connect()
-    setup_scheduler()
-    yield
-    await db_manager.disconnect()
+app = FastAPI(title="InsightMatrix Stable API")
 
-app = FastAPI(title="InsightMatrix API", lifespan=lifespan)
+# 1. ONE-TIME STARTUP (Simple and safe)
+@app.on_event("startup")
+async def startup_event():
+    logger.info("⚡️ SYSTEM STARTING...")
+    try:
+        await db_manager.connect()
+        setup_scheduler()
+    except Exception as e:
+        logger.error(f"STARTUP ERROR: {e}")
 
-# TRIPLE-LAYER CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
+# 2. FAIL-SAFE CORS MIDDLEWARE (The "Unbreakable" version)
 @app.middleware("http")
-async def diagnostic_middleware(request: Request, call_next):
-    # LOG EVERY ATTEMPT
-    origin = request.headers.get("origin")
-    method = request.method
-    path = request.url.path
-    logger.info(f"🔍 REQUEST: {method} {path} from ORIGIN: {origin}")
-    
-    if method == "OPTIONS":
+async def universal_cors_middleware(request: Request, call_next):
+    # Handle Preflight (OPTIONS)
+    if request.method == "OPTIONS":
         return Response(
             status_code=204,
             headers={
@@ -53,15 +39,25 @@ async def diagnostic_middleware(request: Request, call_next):
         )
     
     try:
+        # Try to get the response
         response = await call_next(request)
-        response.headers["Access-Control-Allow-Origin"] = "*"
-        return response
     except Exception as e:
-        logger.error(f"❌ REQUEST FAILED: {str(e)}")
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        # If the backend crashes, still send CORS headers so the browser sees the error
+        logger.error(f"CRASH DETECTED: {str(e)}\n{traceback.format_exc()}")
+        response = JSONResponse(
+            status_code=500,
+            content={"error": "Backend Error", "detail": str(e)}
+        )
+    
+    # FORCE CORS HEADERS ON EVERY SINGLE RESPONSE
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "*"
+    response.headers["Access-Control-Allow-Headers"] = "*"
+    return response
 
+# 3. Routes
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
 @app.get("/")
 async def root():
-    return {"status": "online", "diagnostic": "active"}
+    return {"status": "online", "mode": "failsafe"}
