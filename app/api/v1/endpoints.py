@@ -17,7 +17,17 @@ async def ensure_db():
 
 def serialize_mongo(doc):
     if not doc: return doc
-    doc["id"] = str(doc.pop("_id"))
+    # Convert ObjectId to String
+    if "_id" in doc:
+        doc["id"] = str(doc.pop("_id"))
+    # Convert all DateTimes to Strings
+    for key, value in doc.items():
+        if isinstance(value, datetime):
+            doc[key] = value.isoformat()
+        if isinstance(value, ObjectId):
+            doc[key] = str(value)
+        if isinstance(value, list):
+            doc[key] = [str(i) if isinstance(i, ObjectId) else i for i in value]
     return doc
 
 @router.get("/digest")
@@ -33,25 +43,26 @@ async def read_digest(
             query["category"] = category
             
         cursor = db_manager.db.clusters.find(query).sort("createdAt", -1).skip(skip).limit(limit)
-        clusters = await cursor.to_list(length=limit)
+        clusters_raw = await cursor.to_list(length=limit)
         
-        if not clusters:
+        if not clusters_raw:
             # Fallback to raw articles if no clusters yet
             articles_cursor = db_manager.db.articles.find(query).sort("publishedAt", -1).skip(skip).limit(limit)
             raw_articles = await articles_cursor.to_list(length=limit)
-            return [{
-                "id": str(a["_id"]),
+            return [serialize_mongo({
                 "topic_name": a["title"],
                 "category": a.get("category", "General"),
                 "createdAt": a.get("publishedAt"),
                 "articles": [serialize_mongo(a)]
-            } for a in raw_articles]
+            }) for a in raw_articles]
             
-        for cluster in clusters:
+        clusters = []
+        for cluster in clusters_raw:
+            # Hydrate articles
             article_ids = [ObjectId(aid) if isinstance(aid, str) else aid for aid in cluster.get("articleIds", [])]
             articles_cursor = db_manager.db.articles.find({"_id": {"$in": article_ids}})
             cluster["articles"] = [serialize_mongo(a) for a in await articles_cursor.to_list(length=100)]
-            serialize_mongo(cluster)
+            clusters.append(serialize_mongo(cluster))
             
         return clusters
     except Exception as e:
@@ -68,7 +79,7 @@ async def get_digest_count(category: str = "All"):
         count = await db_manager.db.clusters.count_documents(query)
         if count == 0:
             count = await db_manager.db.articles.count_documents(query)
-        return {"total": count} # Frontend expects {"total": count}
+        return {"total": count}
     except: 
         return {"total": 0}
 
