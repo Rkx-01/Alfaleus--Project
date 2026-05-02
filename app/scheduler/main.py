@@ -49,8 +49,9 @@ async def run_news_digest_pipeline():
                 logger.error(f"Error upserting {data.url}: {e}")
 
         # 3. Create Immediate Topics (Safety fallback for UI)
-        # We find articles with no clusters and create topics for them
-        unclustered = await db_manager.db.articles.find({"clusterIds": {"$size": 0}}).limit(20).to_list(length=20)
+        # We find NEWEST articles with no clusters and create topics for them
+        unclustered_cursor = db_manager.db.articles.find({"clusterIds": {"$size": 0}}).sort("publishedAt", -1).limit(20)
+        unclustered = await unclustered_cursor.to_list(length=20)
         
         for article in unclustered:
             try:

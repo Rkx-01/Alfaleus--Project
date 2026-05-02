@@ -17,10 +17,13 @@ async def ensure_db():
 
 def serialize_mongo(doc):
     if not doc: return doc
-    # Convert ObjectId to String
     if "_id" in doc:
         doc["id"] = str(doc.pop("_id"))
-    # Convert all DateTimes to Strings
+    
+    # CRITICAL FALLBACK: Never show "Pending" to the user
+    if not doc.get("summary"):
+        doc["summary"] = doc.get("description") or doc.get("title") or "Reading article..."
+
     for key, value in doc.items():
         if isinstance(value, datetime):
             doc[key] = value.isoformat()
@@ -46,7 +49,6 @@ async def read_digest(
         clusters_raw = await cursor.to_list(length=limit)
         
         if not clusters_raw:
-            # Fallback to raw articles if no clusters yet
             articles_cursor = db_manager.db.articles.find(query).sort("publishedAt", -1).skip(skip).limit(limit)
             raw_articles = await articles_cursor.to_list(length=limit)
             return [serialize_mongo({
@@ -58,7 +60,6 @@ async def read_digest(
             
         clusters = []
         for cluster in clusters_raw:
-            # Hydrate articles
             article_ids = [ObjectId(aid) if isinstance(aid, str) else aid for aid in cluster.get("articleIds", [])]
             articles_cursor = db_manager.db.articles.find({"_id": {"$in": article_ids}})
             cluster["articles"] = [serialize_mongo(a) for a in await articles_cursor.to_list(length=100)]
@@ -80,8 +81,7 @@ async def get_digest_count(category: str = "All"):
         if count == 0:
             count = await db_manager.db.articles.count_documents(query)
         return {"total": count}
-    except: 
-        return {"total": 0}
+    except: return {"total": 0}
 
 @router.get("/nuclear-fetch")
 async def nuclear_fetch():
@@ -89,7 +89,7 @@ async def nuclear_fetch():
     try:
         articles = await collect_all_news()
         count = 0
-        for a in articles[:20]:
+        for a in articles:
             await db_manager.db.articles.update_one(
                 {"url": a.url},
                 {"$set": {
