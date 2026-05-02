@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Starting up application (God Mode CORS)...")
+    logger.info("Starting up application (CORS Header Fix)...")
     await db_manager.connect()
     setup_scheduler()
     yield
@@ -26,21 +26,21 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="InsightMatrix API",
-    version="4.0.0",
+    version="5.0.0",
     lifespan=lifespan
 )
 
-# 1. Standard CORS Middleware
+# 1. Standard CORS Middleware (Now with explicit headers)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=False,
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["Content-Type", "X-API-KEY", "Authorization", "Accept"],
     expose_headers=["*"],
 )
 
-# 2. "God Mode" Manual Header Middleware (Overrides everything)
+# 2. Manual Preflight Override (Explicitly allowing X-API-KEY)
 @app.middleware("http")
 async def add_cors_header(request: Request, call_next):
     if request.method == "OPTIONS":
@@ -48,15 +48,13 @@ async def add_cors_header(request: Request, call_next):
             status_code=204,
             headers={
                 "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Methods": "*",
-                "Access-Control-Allow-Headers": "*",
+                "Access-Control-Allow-Methods": "GET, POST, OPTIONS, PUT, DELETE",
+                "Access-Control-Allow-Headers": "Content-Type, X-API-KEY, Authorization, Accept",
             }
         )
     
     response = await call_next(request)
     response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Access-Control-Allow-Methods"] = "*"
-    response.headers["Access-Control-Allow-Headers"] = "*"
     return response
 
 @app.exception_handler(Exception)
@@ -72,4 +70,4 @@ app.include_router(api_router, prefix=settings.API_V1_STR)
 
 @app.get("/")
 async def root():
-    return {"status": "online", "engine": "Motor", "cors": "enabled"}
+    return {"status": "online", "engine": "Motor", "cors": "explicit_headers"}
